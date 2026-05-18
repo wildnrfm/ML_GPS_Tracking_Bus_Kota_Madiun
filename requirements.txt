@@ -1,0 +1,29 @@
+# ============================================================
+#  requirements.txt — ML-ETA FastAPI Service
+#  GPS Tracker Bus Sekolah — ETA Prediction
+# ============================================================
+
+# ── API Framework ────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-dotenv==1.0.1
+pydantic==2.7.1
+
+# ── ML & Data ────────────────────────────────────────────────
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.4.2
+lightgbm==4.3.0
+xgboost==2.0.3
+optuna==3.6.1
+joblib==1.4.0
+
+# ── MLflow Logging ───────────────────────────────────────────
+mlflow==2.12.2
+
+# ── Generative AI ────────────────────────────────────────────
+groq==0.8.0
+
+# ── Visualisasi (untuk notebook) ─────────────────────────────
+matplotlib==3.8.4
+seaborn==0.13.2

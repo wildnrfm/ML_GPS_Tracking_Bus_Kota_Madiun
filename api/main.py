@@ -1,0 +1,250 @@
+"""
+main.py — FastAPI Server untuk ML-ETA
+======================================
+GPS Tracker Bus Sekolah — ETA Prediction Service
+
+Endpoints:
+  GET  /              → health check
+  GET  /model-info    → info model & performa
+  POST /predict       → prediksi ETA dari koordinat GPS
+  POST /predict/explain → prediksi + penjelasan natural (Generative AI)
+  GET  /docs          → Swagger UI
+"""
+
+import os
+import json
+from datetime import datetime
+from typing import Optional
+
+from groq import Groq
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+from inference import predict_eta, get_feature_info, BASE_DIR
+
+load_dotenv()
+
+# ── Konfigurasi Generative AI ─────────────────────────────────────────────────
+GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL    = os.getenv("GROQ_MODEL", "llama3-8b-8192")
+
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+# ── Inisialisasi FastAPI ──────────────────────────────────────────────────────
+app = FastAPI(
+    title="🚌 ML-ETA Bus Sekolah API",
+    description=(
+        "REST API untuk prediksi Estimated Time of Arrival (ETA) "
+        "GPS Tracker Bus Sekolah menggunakan Machine Learning (LightGBM) "
+        "dan Generative AI (Groq / LLaMA3)."
+    ),
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        os.getenv("LARAVEL_URL", "http://localhost:8000"),
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ── Schema Request / Response ─────────────────────────────────────────────────
+class ETARequest(BaseModel):
+    start_lat:      float = Field(..., description="Latitude titik keberangkatan", example=41.149)
+    start_lon:      float = Field(..., description="Longitude titik keberangkatan", example=-8.610)
+    end_lat:        float = Field(..., description="Latitude titik tujuan", example=41.157)
+    end_lon:        float = Field(..., description="Longitude titik tujuan", example=-8.650)
+    departure_time: Optional[str] = Field(
+        None,
+        description="Waktu berangkat ISO8601 (default: sekarang)",
+        example="2024-09-02T07:00:00"
+    )
+    distance_km:    Optional[float] = Field(
+        None,
+        description="Jarak aktual (km). Jika kosong, dihitung otomatis.",
+        example=5.1
+    )
+    call_type:      str = Field("C", description="Tipe perjalanan: A, B, atau C", example="C")
+
+    # Konteks tambahan untuk penjelasan GenAI
+    bus_id:         Optional[str] = Field(None, description="ID Bus", example="BUS-001")
+    route_name:     Optional[str] = Field(None, description="Nama Rute", example="Rute Sekolah A")
+    student_count:  Optional[int] = Field(None, description="Jumlah siswa di bus", example=25)
+
+
+class ETAResponse(BaseModel):
+    success:          bool
+    eta_minutes:      float
+    eta_seconds:      int
+    estimated_arrival: str
+    distance_km:      float
+    straight_dist_km: float
+    departure_time:   str
+    message:          str
+
+
+class ETAExplainResponse(ETAResponse):
+    explanation:      str   # Penjelasan natural dari Generative AI
+
+
+# ── Helper ────────────────────────────────────────────────────────────────────
+def parse_departure(departure_str: Optional[str]) -> datetime:
+    if departure_str is None:
+        return datetime.now()
+    try:
+        return datetime.fromisoformat(departure_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail="Format departure_time tidak valid. Gunakan ISO8601, contoh: 2024-09-02T07:00:00"
+        )
+
+
+async def generate_explanation(result: dict, req: ETARequest) -> str:
+    """Hasilkan penjelasan ETA dalam Bahasa Indonesia menggunakan Groq (LLaMA3)."""
+    if not groq_client:
+        return "Generative AI tidak dikonfigurasi. Set GROQ_API_KEY di file .env."
+
+    prompt = f"""
+Kamu adalah asisten sistem GPS Tracker Bus Sekolah yang ramah dan informatif.
+Berikan penjelasan singkat (2-3 kalimat) dalam Bahasa Indonesia yang mudah dipahami oleh orang tua siswa.
+
+Data perjalanan:
+- Bus ID        : {req.bus_id or 'Tidak diketahui'}
+- Rute          : {req.route_name or 'Rute Sekolah'}
+- Jumlah siswa  : {req.student_count or 'Tidak diketahui'} siswa
+- Waktu berangkat: {result['departure_time']}
+- Jarak tempuh  : {result['distance_km']} km
+- Estimasi durasi: {result['eta_minutes']} menit
+- Estimasi tiba : {result['estimated_arrival']}
+
+Tulis penjelasan yang menyebutkan estimasi waktu tiba dan kondisi perjalanan (apakah jam sibuk, dll).
+Jangan gunakan bullet point. Langsung tulis paragraf singkat.
+"""
+
+    try:
+        response = groq_client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+            temperature=0.7,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Prediksi ETA berhasil. Bus diperkirakan tiba pukul {result['estimated_arrival']} " \
+               f"dengan waktu tempuh sekitar {result['eta_minutes']:.0f} menit."
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+@app.get("/", tags=["Health"])
+def root():
+    """Health check endpoint."""
+    return {
+        "status": "online",
+        "service": "ML-ETA Bus Sekolah",
+        "version": "1.0.0",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.get("/model-info", tags=["Model"])
+def model_info():
+    """Informasi model yang sedang digunakan beserta performa di test set."""
+    try:
+        info = get_feature_info()
+        return {
+            "model_type":   "LightGBM (Tuned with Optuna)",
+            "test_mae":     info.get("test_mae"),
+            "test_rmse":    info.get("test_rmse"),
+            "test_r2":      info.get("test_r2"),
+            "n_features":   len(info.get("all_features", [])),
+            "features":     info.get("all_features"),
+            "target":       info.get("target"),
+        }
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=503,
+            detail="Model belum tersedia. Jalankan notebook 02_modeling.ipynb terlebih dahulu."
+        )
+
+
+@app.post("/predict", response_model=ETAResponse, tags=["Prediction"])
+def predict(req: ETARequest):
+    """
+    Prediksi ETA berdasarkan koordinat GPS asal & tujuan.
+    
+    Digunakan oleh Laravel backend untuk mendapatkan estimasi waktu tiba bus.
+    """
+    try:
+        departure = parse_departure(req.departure_time)
+        result    = predict_eta(
+            start_lat      = req.start_lat,
+            start_lon      = req.start_lon,
+            end_lat        = req.end_lat,
+            end_lon        = req.end_lon,
+            departure_time = departure,
+            distance_km    = req.distance_km,
+            call_type      = req.call_type,
+        )
+        return ETAResponse(
+            success           = True,
+            message           = f"ETA berhasil diprediksi. Bus diperkirakan tiba pukul {result['estimated_arrival']}.",
+            **result
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediksi gagal: {str(e)}")
+
+
+@app.post("/predict/explain", response_model=ETAExplainResponse, tags=["Prediction"])
+async def predict_with_explanation(req: ETARequest):
+    """
+    Prediksi ETA + penjelasan natural (Bahasa Indonesia) via Generative AI.
+    
+    Fitur tambahan menggunakan Google Gemini API (Checklist #7).
+    Cocok ditampilkan kepada orang tua siswa di aplikasi Flutter.
+    """
+    try:
+        departure   = parse_departure(req.departure_time)
+        result      = predict_eta(
+            start_lat      = req.start_lat,
+            start_lon      = req.start_lon,
+            end_lat        = req.end_lat,
+            end_lon        = req.end_lon,
+            departure_time = departure,
+            distance_km    = req.distance_km,
+            call_type      = req.call_type,
+        )
+        explanation = await generate_explanation(result, req)
+
+        return ETAExplainResponse(
+            success           = True,
+            message           = f"ETA berhasil diprediksi.",
+            explanation       = explanation,
+            **result
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediksi gagal: {str(e)}")
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host=os.getenv("APP_HOST", "0.0.0.0"),
+        port=int(os.getenv("APP_PORT", 8001)),
+        reload=True,
+    )

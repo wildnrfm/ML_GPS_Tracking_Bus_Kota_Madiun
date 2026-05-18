@@ -1,0 +1,105 @@
+version: "3.9"
+
+# ============================================================
+#  Docker Compose — GPS Tracker Bus Sekolah
+#  Menjalankan Laravel (PHP) + FastAPI (Python ML) sekaligus
+#  Perintah: docker compose up --build
+# ============================================================
+
+services:
+
+  # ── Laravel Backend ─────────────────────────────────────────
+  laravel:
+    build:
+      context: .
+      dockerfile: Dockerfile.laravel
+    container_name: bus_tracker_laravel
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=local
+      - APP_KEY=${APP_KEY}
+      - DB_CONNECTION=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=${DB_DATABASE:-bus_tracker}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:-secret}
+      - ML_ETA_URL=http://fastapi:8001   # panggil FastAPI via nama service
+    depends_on:
+      - db
+      - fastapi
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/vendor
+    networks:
+      - bus_network
+
+  # ── FastAPI ML Service ──────────────────────────────────────
+  fastapi:
+    build:
+      context: ./ml-eta
+      dockerfile: Dockerfile.fastapi
+    container_name: bus_tracker_ml
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - APP_ENV=production
+      - APP_PORT=8001
+      - APP_HOST=0.0.0.0
+      - MODEL_PATH=models/eta_model_best.pkl
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GENAI_PROVIDER=gemini
+      - LARAVEL_URL=http://laravel:8000
+    volumes:
+      - ./ml-eta/models:/app/models       # mount folder models agar persist
+      - ./ml-eta/data:/app/data
+    networks:
+      - bus_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── MySQL Database ──────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: bus_tracker_db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-bus_tracker}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-secret}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - bus_network
+
+  # ── phpMyAdmin (opsional, untuk development) ────────────────
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: bus_tracker_phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: db
+      PMA_USER: root
+      PMA_PASSWORD: ${DB_PASSWORD:-secret}
+    depends_on:
+      - db
+    networks:
+      - bus_network
+    profiles:
+      - dev   # hanya jalan kalau: docker compose --profile dev up
+
+volumes:
+  db_data:
+
+networks:
+  bus_network:
+    driver: bridge
