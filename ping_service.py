@@ -23,6 +23,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (if running locally)
+load_dotenv()
 
 # Fix Windows cp1252 Unicode encoding issue
 if hasattr(sys.stdout, 'reconfigure'):
