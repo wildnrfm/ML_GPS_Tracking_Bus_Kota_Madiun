@@ -11,8 +11,13 @@ Endpoints:
 """
 
 import os
+import sys
 from datetime import datetime
 from typing import Optional
+from pathlib import Path
+
+# Pastikan folder api/ ada di PATH pencarian Python
+sys.path.append(str(Path(__file__).resolve().parent))
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
