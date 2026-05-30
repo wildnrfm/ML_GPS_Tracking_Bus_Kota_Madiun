@@ -32,4 +32,24 @@ jobs:
             echo "❌ ERROR: HF_TOKEN secret is not set in GitHub Repository Secrets!"
             exit 1
           fi
-          git push --force https://wildnrfm:$HF_TOKEN@huggingface.co/spaces/wildnrfm/ML_GPS_Tracking_Bus_Kota_Madiun HEAD:main
+
+          # 1. Konfigurasi Git Identity
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+          # 2. Sinkronisasi berkas ke folder bersih (tanpa histori .git lama)
+          mkdir -p ../hf_deploy
+          rsync -av --exclude='.git' ./ ../hf_deploy/
+          cd ../hf_deploy
+
+          # 3. Inisialisasi Git baru & Git LFS
+          git init -b main
+          git lfs install
+          git lfs track "models/eta_model_best.pkl"
+
+          # 4. Commit semua berkas (model .pkl akan dianggap LFS pointer)
+          git add .
+          git commit -m "deploy: sync to Hugging Face Spaces"
+
+          # 5. Force push ke Hugging Face Spaces
+          git push --force https://wildnrfm:$HF_TOKEN@huggingface.co/spaces/wildnrfm/ML_GPS_Tracking_Bus_Kota_Madiun main:main
