@@ -1,3 +1,12 @@
+---
+title: ML GPS Tracking Bus Kota Madiun
+emoji: 🐨
+colorFrom: purple
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 # 🚌 ML-ETA — ETA Prediction untuk GPS Tracker Bus Sekolah
 
 Modul Machine Learning untuk prediksi **Estimated Time of Arrival (ETA)**  
