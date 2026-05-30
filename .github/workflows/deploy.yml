@@ -28,4 +28,8 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          git push --force https://wildnrfm:$HF_TOKEN@huggingface.co/spaces/wildnrfm/ML_GPS_Tracking_Bus_Kota_Madiun main:main
+          if [ -z "$HF_TOKEN" ]; then
+            echo "❌ ERROR: HF_TOKEN secret is not set in GitHub Repository Secrets!"
+            exit 1
+          fi
+          git push --force https://wildnrfm:$HF_TOKEN@huggingface.co/spaces/wildnrfm/ML_GPS_Tracking_Bus_Kota_Madiun HEAD:main
