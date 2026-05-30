@@ -1,0 +1,30 @@
+# .github/workflows/deploy.yml
+#
+# ML-ETA — Auto Deployment to Hugging Face Spaces
+# ───────────────────────────────────────────────
+# Syncs code automatically to Hugging Face Space on git push.
+#
+# Required GitHub Secrets:
+#   HF_TOKEN – Hugging Face Write Token
+
+name: 🚀 Sync to Hugging Face Spaces
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: 🚀 Push to Hugging Face Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git push --force https://wildnrfm:$HF_TOKEN@huggingface.co/spaces/wildnrfm/ML_GPS_Tracking_Bus_Kota_Madiun main:main
