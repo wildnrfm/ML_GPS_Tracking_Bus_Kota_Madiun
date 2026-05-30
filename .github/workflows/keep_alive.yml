@@ -1,0 +1,93 @@
+# .github/workflows/keep_alive.yml
+#
+# ML-ETA — Keep-Alive & Monitoring Workflow
+# ──────────────────────────────────────────
+# Runs every 25 minutes to ping the HuggingFace Space so it doesn't hibernate.
+#
+# Required GitHub Repository Secrets:
+#   HF_SPACE_URL          – base URL of your HF Space (no trailing slash)
+#                            e.g. https://wildnrfm-ml-eta.hf.space
+#   DISCORD_WEBHOOK_URL   – Discord webhook URL to send status updates (optional)
+
+name: 🩺 ML-ETA Keep-Alive & Monitor
+
+on:
+  schedule:
+    # Every 25 minutes (HuggingFace CPU basic space enters sleep after ~1 hour of inactivity)
+    - cron: "*/25 * * * *"
+
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Alasan memicu manual (opsional)"
+        required: false
+        default: "Manual keep-alive ping"
+
+jobs:
+  ping:
+    name: Ping HuggingFace Space
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      # ── 1. Checkout repository ──────────────────────────────────────────
+      - name: ⬇️ Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Python ────────────────────────────────────────────────
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ── 3. Install dependencies ─────────────────────────────────────────
+      - name: 📦 Install dependencies
+        run: pip install requests
+
+      # ── 4. Restore previous log ─────────────────────────────────────────
+      - name: 📂 Restore ping log cache
+        uses: actions/cache@v4
+        with:
+          path: ping_log.csv
+          key: ping-log-${{ github.ref_name }}
+          restore-keys: |
+            ping-log-
+
+      # ── 5. Run ping script ───────────────────────────────────────────────
+      - name: 🏓 Run ping_service.py
+        env:
+          HF_SPACE_URL: ${{ secrets.HF_SPACE_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python ping_service.py
+
+      # ── 6. Upload ping_log.csv as artifact ──────────────────────────────
+      - name: 📊 Upload ping log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ping-log-${{ github.run_number }}
+          path: ping_log.csv
+          if-no-files-found: warn
+          retention-days: 30
+
+      # ── 7. Print summary to the workflow run page ────────────────────────
+      - name: 📋 Write job summary
+        if: always()
+        run: |
+          echo "## 🩺 ML-ETA Ping Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Run #** | ${{ github.run_number }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Trigger** | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Timestamp (UTC)** | $(date -u '+%Y-%m-%d %H:%M:%S') |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Target URL** | \`${{ secrets.HF_SPACE_URL }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f ping_log.csv ]; then
+            echo "### Last 5 log entries" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 5 ping_log.csv >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
