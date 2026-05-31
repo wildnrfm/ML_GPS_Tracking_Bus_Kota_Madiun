@@ -7,7 +7,7 @@
 #    - Run as non-root user (UID 1000)
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # 1. Install system dependencies (libgomp1 is required by LightGBM)
 RUN apt-get update && \
