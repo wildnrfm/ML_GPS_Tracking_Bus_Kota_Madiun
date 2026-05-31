@@ -12,7 +12,7 @@ pydantic==2.7.1
 # ── ML & Data ────────────────────────────────────────────────
 pandas==2.2.2
 numpy==1.26.4
-scikit-learn==1.4.2
+scikit-learn==1.8.0
 lightgbm==4.3.0
 xgboost==2.0.3
 optuna==3.6.1
