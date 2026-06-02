@@ -17,6 +17,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: github.repository == 'wildnrfm/ML_GPS_Tracking_Bus_Kota_Madiun'
     steps:
       - name: ⬇️ Checkout repository
         uses: actions/checkout@v4
