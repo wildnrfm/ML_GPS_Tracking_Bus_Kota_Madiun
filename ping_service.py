@@ -158,6 +158,8 @@ def main() -> None:
 
     print("=" * 60)
     print(f"  ML-ETA Keep-Alive Ping  |  {utc_now()}")
+    import base64
+    print(f"[DEBUG] Base64 URL: {base64.b64encode(BASE_URL.encode()).decode()}")
     print("=" * 60)
 
     timestamp = utc_now()
